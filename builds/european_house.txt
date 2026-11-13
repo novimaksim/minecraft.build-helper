@@ -1,0 +1,51 @@
+name Европейский дом 50x10
+def stone stone_bricks
+def plaster calcite
+def wood dark_oak_planks
+def glass glass_pane
+def roof brick_stairs
+fill 0 0 0 49 0 9 $stone
+loop f 0 2
+let y 5*f
+fill 0 y+1 0 49 y+4 9 $plaster
+fill 1 y+1 1 48 y+4 8 air
+fill 0 y+4 0 49 y+4 0 $wood
+fill 0 y+4 9 49 y+4 9 $wood
+fill 0 y+4 0 0 y+4 9 $wood
+fill 49 y+4 0 49 y+4 9 $wood
+loop p 0 49 7
+fill p y+1 0 p y+4 0 $wood
+fill p y+1 9 p y+4 9 $wood
+end
+loop p 0 42 7
+fill p+2 y+2 0 p+5 y+3 0 $glass
+fill p+2 y+2 9 p+5 y+3 9 $glass
+end
+fill 0 y+2 4 0 y+3 5 $glass
+fill 49 y+2 4 49 y+3 5 $glass
+end
+fill 0 5 0 49 5 9 $wood
+fill 0 10 0 49 10 9 $wood
+fill 0 15 0 49 15 9 $wood
+fill 23 1 0 26 3 0 air
+fill 23 1 0 23 3 0 $wood
+fill 26 1 0 26 3 0 $wood
+fill 23 0 -1 26 0 -1 stone_brick_stairs[facing=south]
+loop f 0 1
+let y 5*f
+fill 2 y+5 1 5 y+5 2 air
+loop i 0 3
+fill 2+i y+1+i 1 2+i y+1+i 2 dark_oak_stairs[facing=east]
+end
+end
+loop k 1 4
+let yy 15+k
+fill 0 yy k 0 yy 9-k $plaster
+fill 49 yy k 49 yy 9-k $plaster
+end
+loop k 0 4
+let yy 15+k
+fill -1 yy k-1 50 yy k-1 $roof[facing=south]
+fill -1 yy 10-k 50 yy 10-k $roof[facing=north]
+end
+fill -1 19 4 50 19 5 bricks
