@@ -10,7 +10,7 @@ public final class ScriptParser {
         public ParseException(String m) { super(m); }
     }
 
-    private static final int MAX_OPS = 4000, MAX_FILL = 32768, MAX_ITER = 10000;
+    private static final int MAX_OPS = 20000, MAX_FILL = 32768, MAX_ITER = 10000;
     private static final Pattern DEF_REF = Pattern.compile("\\$([A-Za-z_][A-Za-z0-9_]*)");
     private static final Pattern BLOCK_OK = Pattern.compile("[a-z0-9_.:/-]+(\\[[a-z0-9_=,]*\\])?");
 

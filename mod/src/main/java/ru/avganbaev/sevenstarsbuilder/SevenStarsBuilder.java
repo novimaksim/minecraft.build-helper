@@ -7,6 +7,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -15,152 +16,196 @@ import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent;
-import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.fml.loading.FMLPaths;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Deque;
-import java.util.List;
+import java.nio.file.*;
+import java.util.*;
 import java.util.stream.Stream;
 
 @Mod(SevenStarsBuilder.MODID)
 public final class SevenStarsBuilder {
-    public static final String MODID = "sevenstars_builder";
-    private static final Logger LOGGER = LogUtils.getLogger();
-    private static final String CAT = "category.sevenstars_builder";
-    private static final KeyMapping PASTE = new KeyMapping("key.sevenstars_builder.paste", GLFW.GLFW_KEY_V, CAT);
-    private static final KeyMapping NEXT = new KeyMapping("key.sevenstars_builder.next", GLFW.GLFW_KEY_RIGHT_BRACKET, CAT);
-    private static final KeyMapping ROTATE = new KeyMapping("key.sevenstars_builder.rotate", GLFW.GLFW_KEY_R, CAT);
-    private static final KeyMapping CONFIRM = new KeyMapping("key.sevenstars_builder.confirm", GLFW.GLFW_KEY_ENTER, CAT);
-    private static final KeyMapping CANCEL = new KeyMapping("key.sevenstars_builder.cancel", GLFW.GLFW_KEY_BACKSPACE, CAT);
-    private static final List<BuildDefinition> BUILDS = new ArrayList<>();
-    private static final Deque<String> QUEUE = new ArrayDeque<>();
-    private static int selected = 0, rotation = 0, total = 0;
-    private static boolean preview = true;
+    public static final String MODID="sevenstars_builder";
+    private static final Logger LOG=LogUtils.getLogger();
+    private static final String CAT="category.sevenstars_builder";
+    private static KeyMapping key(String name,int code){return new KeyMapping("key.sevenstars_builder."+name,code,CAT);}
+    private static final KeyMapping PASTE=key("paste",GLFW.GLFW_KEY_V);
+    private static final KeyMapping NEXT=key("next",GLFW.GLFW_KEY_RIGHT_BRACKET);
+    private static final KeyMapping ROTATE=key("rotate",GLFW.GLFW_KEY_R);
+    private static final KeyMapping CONFIRM=key("confirm",GLFW.GLFW_KEY_ENTER);
+    private static final KeyMapping CANCEL=key("cancel",GLFW.GLFW_KEY_BACKSPACE);
+    private static final KeyMapping LOCK=key("lock",GLFW.GLFW_KEY_G);
+    private static final KeyMapping FORWARD=key("forward",GLFW.GLFW_KEY_UP);
+    private static final KeyMapping BACK=key("back",GLFW.GLFW_KEY_DOWN);
+    private static final KeyMapping LEFT=key("left",GLFW.GLFW_KEY_LEFT);
+    private static final KeyMapping RIGHT=key("right",GLFW.GLFW_KEY_RIGHT);
+    private static final KeyMapping UP=key("up",GLFW.GLFW_KEY_PAGE_UP);
+    private static final KeyMapping DOWN=key("down",GLFW.GLFW_KEY_PAGE_DOWN);
+    private static final KeyMapping[] KEYS={PASTE,NEXT,ROTATE,CONFIRM,CANCEL,LOCK,FORWARD,BACK,LEFT,RIGHT,UP,DOWN};
+    private static final List<BuildDefinition> BUILDS=new ArrayList<>();
+    private static final Deque<String> QUEUE=new ArrayDeque<>();
+    private static int selected,rotation,ticks,total;
+    private static boolean preview=true;
+    private static BlockPos lockedOrigin;
+    private static Object previousLevel;
+    private static final Map<String,Bounds> BOUNDS=new HashMap<>();
+    private record Bounds(int minX,int minY,int minZ,int maxX,int maxY,int maxZ){}
 
-    public SevenStarsBuilder() {
-        IEventBus bus = FMLJavaModLoadingContext.get().getModEventBus();
-        bus.addListener(this::keys);
+    public SevenStarsBuilder(){
+        FMLJavaModLoadingContext.get().getModEventBus().addListener(this::keys);
         MinecraftForge.EVENT_BUS.register(this);
         loadSaved();
     }
-
-    private void keys(RegisterKeyMappingsEvent e) { e.register(PASTE); e.register(NEXT); e.register(ROTATE); e.register(CONFIRM); e.register(CANCEL); }
-
-    private static Path dir() { return FMLPaths.CONFIGDIR.get().resolve("sevenstars_builds"); }
-
-    private static void loadSaved() {
-        try {
+    private void keys(RegisterKeyMappingsEvent e){for(KeyMapping k:KEYS)e.register(k);}
+    private static Path dir(){return FMLPaths.CONFIGDIR.get().resolve("sevenstars_builds");}
+    private static void msg(String text,boolean chat){
+        LocalPlayer p=Minecraft.getInstance().player;
+        if(p!=null)p.displayClientMessage(Component.literal("[7Stars] "+text),!chat);
+    }
+    private static BuildDefinition build(){return BUILDS.isEmpty()?null:BUILDS.get(selected%BUILDS.size());}
+    private static void loadSaved(){
+        try{
             Files.createDirectories(dir());
-            try (Stream<Path> s = Files.list(dir())) {
-                for (Path f : s.filter(p -> p.toString().endsWith(".txt")).sorted().toList()) {
-                    try { BUILDS.add(ScriptParser.parse(Files.readString(f, StandardCharsets.UTF_8))); }
-                    catch (ScriptParser.ParseException ex) { LOGGER.warn("[7Stars] {}: {}", f.getFileName(), ex.getMessage()); }
+            try(Stream<Path> files=Files.list(dir())){
+                for(Path f:files.filter(p->p.toString().endsWith(".txt")).sorted().toList()){
+                    try{BUILDS.add(ScriptParser.parse(Files.readString(f,StandardCharsets.UTF_8)));}
+                    catch(ScriptParser.ParseException|IOException ex){LOG.warn("[7Stars] {}: {}",f,ex.getMessage());}
                 }
             }
-        } catch (IOException ex) { LOGGER.warn("[7Stars] cannot read builds", ex); }
+        }catch(IOException ex){LOG.warn("[7Stars] Cannot load builds",ex);}
     }
-
-    private static BuildDefinition build() { return BUILDS.isEmpty() ? null : BUILDS.get(selected % BUILDS.size()); }
-
-    private static void msg(String s, boolean chat) {
-        LocalPlayer p = Minecraft.getInstance().player;
-        if (p != null) p.displayClientMessage(Component.literal("[7Stars] " + s), !chat);
+    private static void resetPlacement(){lockedOrigin=null;rotation=0;preview=true;BOUNDS.clear();}
+    private static void paste(){
+        if(!QUEUE.isEmpty()){msg("Сначала останови очередь: Backspace",true);return;}
+        try{
+            String text=Minecraft.getInstance().keyboardHandler.getClipboard();
+            BuildDefinition b=ScriptParser.parse(text);
+            int index=-1;
+            for(int i=0;i<BUILDS.size();i++)if(BUILDS.get(i).name().equalsIgnoreCase(b.name())){index=i;break;}
+            if(index<0){index=BUILDS.size();BUILDS.add(b);}else BUILDS.set(index,b);
+            selected=index;resetPlacement();
+            String file=b.name().replaceAll("[^\\p{L}\\p{N}_-]+","_")+".txt";
+            try{Files.createDirectories(dir());Files.writeString(dir().resolve(file),text,StandardCharsets.UTF_8);}
+            catch(IOException ex){msg("Загружено, но файл не сохранён: "+ex.getMessage(),true);}
+            msg("Загружено: "+b.name()+". G — зафиксировать; R — поворот",true);
+        }catch(ScriptParser.ParseException ex){msg("Ошибка скрипта: "+ex.getMessage(),true);}
     }
-
-    static void pasteFromClipboard() {
-        String text = Minecraft.getInstance().keyboardHandler.getClipboard();
-        try {
-            BuildDefinition d = ScriptParser.parse(text);
-            int idx = -1;
-            for (int i = 0; i < BUILDS.size(); i++) if (BUILDS.get(i).name().equalsIgnoreCase(d.name())) idx = i;
-            if (idx >= 0) BUILDS.set(idx, d); else { BUILDS.add(d); idx = BUILDS.size() - 1; }
-            selected = idx; preview = true;
-            String file = d.name().replaceAll("[^\\p{L}\\p{N}_-]+", "_") + ".txt";
-            try { Files.createDirectories(dir()); Files.writeString(dir().resolve(file), text, StandardCharsets.UTF_8); }
-            catch (IOException ex) { msg("Не смог сохранить файл: " + ex.getMessage(), true); }
-            msg("Загружено: " + d.name() + " (" + d.opCount() + " команд). Enter — построить", true);
-        } catch (ScriptParser.ParseException ex) {
-            msg("Ошибка скрипта: " + ex.getMessage(), true);
-        }
-    }
-
-    private static void list() {
-        if (BUILDS.isEmpty()) { msg("Построек нет. Скопируй скрипт и нажми V", true); return; }
-        for (int i = 0; i < BUILDS.size(); i++) msg((i == selected ? "> " : "  ") + BUILDS.get(i).name(), true);
-    }
-
-    private static void use(String q) {
-        for (int i = 0; i < BUILDS.size(); i++)
-            if (BUILDS.get(i).name().toLowerCase().contains(q.toLowerCase())) { selected = i; preview = true; msg("Выбрано: " + BUILDS.get(i).name(), true); return; }
-        msg("Не найдено: " + q, true);
-    }
-
-    private static BlockPos target() {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.level == null) return null;
-        HitResult r = mc.player.pick(80.0D, 1.0F, false);
-        if (r.getType() != HitResult.Type.BLOCK) return null;
-        BlockHitResult h = (BlockHitResult) r;
+    private static BlockPos target(){
+        Minecraft mc=Minecraft.getInstance();
+        if(mc.player==null||mc.level==null)return null;
+        HitResult hit=mc.player.pick(80.0D,1.0F,false);
+        if(hit.getType()!=HitResult.Type.BLOCK)return null;
+        BlockHitResult h=(BlockHitResult)hit;
         return h.getBlockPos().relative(h.getDirection());
     }
-
-    @SubscribeEvent
-    public void commands(RegisterClientCommandsEvent e) {
+    private static BlockPos origin(){return lockedOrigin!=null?lockedOrigin:target();}
+    private static Bounds bounds(){
+        String key=selected+":"+rotation;
+        return BOUNDS.computeIfAbsent(key,k->{
+            int ax=Integer.MAX_VALUE,ay=ax,az=ax,bx=Integer.MIN_VALUE,by=bx,bz=bx;
+            for(BuildDefinition.Op o:build().rotatedOps(rotation)){
+                ax=Math.min(ax,o.x1());ay=Math.min(ay,o.y1());az=Math.min(az,o.z1());
+                bx=Math.max(bx,o.x2());by=Math.max(by,o.y2());bz=Math.max(bz,o.z2());
+            }
+            return new Bounds(ax,ay,az,bx,by,bz);
+        });
+    }
+    private static void rotate(boolean reverse){
+        if(build()==null)return;
+        Bounds old=bounds();
+        rotation=(rotation+(reverse?3:1))&3;
+        if(lockedOrigin!=null){
+            Bounds now=bounds();
+            int dx=(int)Math.round((old.minX()+old.maxX()-now.minX()-now.maxX())/2.0);
+            int dz=(int)Math.round((old.minZ()+old.maxZ()-now.minZ()-now.maxZ())/2.0);
+            lockedOrigin=lockedOrigin.offset(dx,0,dz);
+        }
+        preview=true;
+    }
+    private static void move(Direction direction,int amount){
+        if(lockedOrigin==null){msg("Сначала зафиксируй призрак: G",false);return;}
+        lockedOrigin=lockedOrigin.relative(direction,amount);preview=true;
+    }
+    private static void drain(){for(KeyMapping k:KEYS)while(k.consumeClick()){} }
+    private static void controls(LocalPlayer p){
+        boolean shift=p.isShiftKeyDown();int step=shift?5:1;
+        while(PASTE.consumeClick())paste();
+        while(CANCEL.consumeClick()){
+            if(!QUEUE.isEmpty()){QUEUE.clear();msg("Очередь остановлена. Уже поставленные блоки не отменены.",true);}
+            else preview=!preview;
+        }
+        if(!QUEUE.isEmpty()){drain();return;}
+        while(NEXT.consumeClick()){
+            if(BUILDS.isEmpty()){msg("Скопируй скрипт и нажми V",true);continue;}
+            selected=(selected+1)%BUILDS.size();resetPlacement();
+        }
+        while(LOCK.consumeClick()){
+            if(build()==null)continue;
+            if(lockedOrigin!=null){lockedOrigin=null;msg("Призрак следует за прицелом",false);}
+            else{BlockPos pos=target();if(pos!=null){lockedOrigin=pos.immutable();preview=true;msg("Положение зафиксировано. Стрелки — сдвиг",false);}else msg("Наведи прицел на блок",false);}
+        }
+        while(ROTATE.consumeClick())rotate(shift);
+        Direction forward=p.getDirection();
+        while(FORWARD.consumeClick())move(forward,step);
+        while(BACK.consumeClick())move(forward.getOpposite(),step);
+        while(LEFT.consumeClick())move(forward.getCounterClockWise(),step);
+        while(RIGHT.consumeClick())move(forward.getClockWise(),step);
+        while(UP.consumeClick())move(Direction.UP,step);
+        while(DOWN.consumeClick())move(Direction.DOWN,step);
+        while(CONFIRM.consumeClick()){
+            if(build()==null||!preview||!QUEUE.isEmpty())continue;
+            if(lockedOrigin==null){msg("Сначала зафиксируй постройку клавишей G",true);continue;}
+            Bounds b=bounds();
+            int bottom=lockedOrigin.getY()+b.minY(),top=lockedOrigin.getY()+b.maxY();
+            if(bottom<Minecraft.getInstance().level.getMinBuildHeight()||top>=Minecraft.getInstance().level.getMaxBuildHeight()){
+                msg("Постройка выходит за пределы высоты мира. Измени высоту PgUp/PgDn.",true);continue;
+            }
+            QUEUE.addAll(build().commands(lockedOrigin,rotation));total=QUEUE.size();preview=false;
+            msg("Отправляю "+total+" команд. Backspace — остановить",true);
+        }
+    }
+    @SubscribeEvent public void tick(TickEvent.ClientTickEvent e){
+        if(e.phase!=TickEvent.Phase.END)return;
+        Minecraft mc=Minecraft.getInstance();
+        if(previousLevel!=mc.level){QUEUE.clear();lockedOrigin=null;previousLevel=mc.level;}
+        if(mc.player==null){drain();return;}
+        if(mc.screen==null)controls(mc.player);else drain();
+        if(!QUEUE.isEmpty()){
+            mc.player.commandUnsigned(QUEUE.removeFirst());
+            if(QUEUE.isEmpty())msg("Все команды отправлены. Проверь результат на сервере.",true);
+            else if(++ticks%20==0)msg("Осталось команд: "+QUEUE.size()+" / "+total,false);
+        }else if(mc.screen==null&&preview&&build()!=null&&++ticks%10==0){
+            BlockPos o=origin();
+            if(o==null){msg("Наведи прицел на блок · G — фиксация",false);return;}
+            msg((lockedOrigin==null?"ПРИЦЕЛ":"ЗАФИКСИРОВАНО")+" · X "+o.getX()+" Y "+o.getY()+" Z "+o.getZ()+
+                " · "+rotation*90+"° · G / стрелки / PgUp PgDn / R / Enter",false);
+        }
+    }
+    @SubscribeEvent public void render(RenderLevelStageEvent e){
+        if(!preview||build()==null||Minecraft.getInstance().level==null||e.getStage()!=RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS)return;
+        BlockPos o=origin();
+        if(o!=null)GhostRenderer.render(e.getPoseStack(),e.getCamera().getPosition(),o,build().cells(rotation));
+    }
+    @SubscribeEvent public void commands(RegisterClientCommandsEvent e){
         e.getDispatcher().register(Commands.literal("sb")
-                .then(Commands.literal("paste").executes(c -> { pasteFromClipboard(); return 1; }))
-                .then(Commands.literal("list").executes(c -> { list(); return 1; }))
-                .then(Commands.literal("use").then(Commands.argument("name", StringArgumentType.greedyString())
-                        .executes(c -> { use(StringArgumentType.getString(c, "name")); return 1; }))));
-    }
-
-    @SubscribeEvent
-    public void tick(TickEvent.ClientTickEvent e) {
-        if (e.phase != TickEvent.Phase.END) return;
-        LocalPlayer p = Minecraft.getInstance().player;
-        if (p == null) { QUEUE.clear(); return; }
-        while (PASTE.consumeClick()) pasteFromClipboard();
-        while (NEXT.consumeClick()) {
-            if (BUILDS.isEmpty()) { list(); continue; }
-            selected = (selected + 1) % BUILDS.size(); preview = true; msg("Выбрано: " + build().name(), false);
-        }
-        while (ROTATE.consumeClick()) { rotation = (rotation + 1) & 3; preview = true; msg("Поворот: " + (rotation * 90) + "°", false); }
-        while (CANCEL.consumeClick()) {
-            if (!QUEUE.isEmpty()) { QUEUE.clear(); msg("Стройка остановлена", true); }
-            else { preview = !preview; msg(preview ? "Призрак включён" : "Призрак выключен", false); }
-        }
-        while (CONFIRM.consumeClick()) {
-            BuildDefinition b = build();
-            BlockPos pos = target();
-            if (b == null || !preview || pos == null || !QUEUE.isEmpty()) continue;
-            QUEUE.addAll(b.commands(pos, rotation));
-            total = QUEUE.size();
-            preview = false;
-            msg("Строю: " + b.name() + " (" + total + " команд)", true);
-        }
-        if (!QUEUE.isEmpty()) {
-            p.commandUnsigned(QUEUE.poll());
-            if (QUEUE.isEmpty()) msg("Готово!", true);
-            else if (QUEUE.size() % 10 == 0) msg("Осталось команд: " + QUEUE.size() + " из " + total, false);
-        }
-    }
-
-    @SubscribeEvent
-    public void render(RenderLevelStageEvent e) {
-        BuildDefinition b = build();
-        if (b == null || !preview || e.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return;
-        BlockPos origin = target();
-        if (origin == null) return;
-        GhostRenderer.render(e.getPoseStack(), e.getCamera().getPosition(), origin, b.cells(rotation));
+            .then(Commands.literal("paste").executes(c->{paste();return 1;}))
+            .then(Commands.literal("list").executes(c->{
+                if(BUILDS.isEmpty())msg("Построек нет. /sb paste",true);
+                for(int i=0;i<BUILDS.size();i++)msg((i==selected?"> ":"")+BUILDS.get(i).name(),true);
+                return 1;
+            }))
+            .then(Commands.literal("use").then(Commands.argument("name",StringArgumentType.greedyString()).executes(c->{
+                if(!QUEUE.isEmpty()){msg("Сначала останови очередь",true);return 0;}
+                String q=StringArgumentType.getString(c,"name").toLowerCase(Locale.ROOT);
+                for(int i=0;i<BUILDS.size();i++)if(BUILDS.get(i).name().toLowerCase(Locale.ROOT).contains(q)){
+                    selected=i;resetPlacement();msg("Выбрано: "+build().name(),true);return 1;
+                }
+                msg("Постройка не найдена",true);return 0;
+            }))));
     }
 }
