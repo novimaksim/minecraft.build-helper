@@ -4,3 +4,4 @@ mod/build/
 mod/run/
 *.iml
 .idea/
+.DS_Store
