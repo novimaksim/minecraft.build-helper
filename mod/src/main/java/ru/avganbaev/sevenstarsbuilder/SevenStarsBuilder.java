@@ -34,7 +34,6 @@ public final class SevenStarsBuilder {
     private static final Logger LOG=LogUtils.getLogger();
     private static final String CAT="category.sevenstars_builder";
     private static KeyMapping key(String name,int code){return new KeyMapping("key.sevenstars_builder."+name,code,CAT);}
-    private static final KeyMapping PASTE=key("paste",GLFW.GLFW_KEY_V);
     private static final KeyMapping NEXT=key("next",GLFW.GLFW_KEY_RIGHT_BRACKET);
     private static final KeyMapping ROTATE=key("rotate",GLFW.GLFW_KEY_R);
     private static final KeyMapping CONFIRM=key("confirm",GLFW.GLFW_KEY_ENTER);
@@ -46,11 +45,11 @@ public final class SevenStarsBuilder {
     private static final KeyMapping RIGHT=key("right",GLFW.GLFW_KEY_RIGHT);
     private static final KeyMapping UP=key("up",GLFW.GLFW_KEY_PAGE_UP);
     private static final KeyMapping DOWN=key("down",GLFW.GLFW_KEY_PAGE_DOWN);
-    private static final KeyMapping[] KEYS={PASTE,NEXT,ROTATE,CONFIRM,CANCEL,LOCK,FORWARD,BACK,LEFT,RIGHT,UP,DOWN};
+    private static final KeyMapping[] KEYS={NEXT,ROTATE,CONFIRM,CANCEL,LOCK,FORWARD,BACK,LEFT,RIGHT,UP,DOWN};
     private static final List<BuildDefinition> BUILDS=new ArrayList<>();
     private static final Deque<String> QUEUE=new ArrayDeque<>();
     private static int selected,rotation,ticks,total;
-    private static boolean preview=true;
+    private static boolean preview;
     private static BlockPos lockedOrigin;
     private static Object previousLevel;
     private static final Map<String,Bounds> BOUNDS=new HashMap<>();
@@ -79,7 +78,8 @@ public final class SevenStarsBuilder {
             }
         }catch(IOException ex){LOG.warn("[7Stars] Cannot load builds",ex);}
     }
-    private static void resetPlacement(){lockedOrigin=null;rotation=0;preview=true;BOUNDS.clear();}
+    private static void resetPlacement(){lockedOrigin=null;rotation=0;BOUNDS.clear();}
+    private static void hidePreview(){preview=false;lockedOrigin=null;}
     private static void paste(){
         if(!QUEUE.isEmpty()){msg("Сначала останови очередь: Backspace",true);return;}
         try{
@@ -88,11 +88,11 @@ public final class SevenStarsBuilder {
             int index=-1;
             for(int i=0;i<BUILDS.size();i++)if(BUILDS.get(i).name().equalsIgnoreCase(b.name())){index=i;break;}
             if(index<0){index=BUILDS.size();BUILDS.add(b);}else BUILDS.set(index,b);
-            selected=index;resetPlacement();
+            selected=index;resetPlacement();preview=true;
             String file=b.name().replaceAll("[^\\p{L}\\p{N}_-]+","_")+".txt";
             try{Files.createDirectories(dir());Files.writeString(dir().resolve(file),text,StandardCharsets.UTF_8);}
             catch(IOException ex){msg("Загружено, но файл не сохранён: "+ex.getMessage(),true);}
-            msg("Загружено: "+b.name()+". G — зафиксировать; R — поворот",true);
+            msg("Загружено: "+b.name()+". Призрак включён. G — фиксация, Backspace — скрыть",true);
         }catch(ScriptParser.ParseException ex){msg("Ошибка скрипта: "+ex.getMessage(),true);}
     }
     private static BlockPos target(){
@@ -116,7 +116,7 @@ public final class SevenStarsBuilder {
         });
     }
     private static void rotate(boolean reverse){
-        if(build()==null)return;
+        if(build()==null||!preview)return;
         Bounds old=bounds();
         rotation=(rotation+(reverse?3:1))&3;
         if(lockedOrigin!=null){
@@ -125,54 +125,64 @@ public final class SevenStarsBuilder {
             int dz=(int)Math.round((old.minZ()+old.maxZ()-now.minZ()-now.maxZ())/2.0);
             lockedOrigin=lockedOrigin.offset(dx,0,dz);
         }
-        preview=true;
     }
     private static void move(Direction direction,int amount){
+        if(!preview)return;
         if(lockedOrigin==null){msg("Сначала зафиксируй призрак: G",false);return;}
-        lockedOrigin=lockedOrigin.relative(direction,amount);preview=true;
+        lockedOrigin=lockedOrigin.relative(direction,amount);
     }
     private static void drain(){for(KeyMapping k:KEYS)while(k.consumeClick()){} }
+    private static int consume(KeyMapping key){int n=0;while(key.consumeClick())n++;return n;}
     private static void controls(LocalPlayer p){
         boolean shift=p.isShiftKeyDown();int step=shift?5:1;
-        while(PASTE.consumeClick())paste();
-        while(CANCEL.consumeClick()){
-            if(!QUEUE.isEmpty()){QUEUE.clear();msg("Очередь остановлена. Уже поставленные блоки не отменены.",true);}
-            else preview=!preview;
+        if(consume(CANCEL)>0){
+            if(!QUEUE.isEmpty()){QUEUE.clear();hidePreview();msg("Очередь остановлена. Призрак скрыт.",true);}
+            else if(preview){hidePreview();msg("Призрак скрыт.",true);}
         }
         if(!QUEUE.isEmpty()){drain();return;}
-        while(NEXT.consumeClick()){
-            if(BUILDS.isEmpty()){msg("Скопируй скрипт и нажми V",true);continue;}
-            selected=(selected+1)%BUILDS.size();resetPlacement();
+        if(consume(NEXT)>0){
+            if(BUILDS.isEmpty())msg("Скопируй скрипт и напиши /sb paste",true);
+            else{
+                selected=(selected+1)%BUILDS.size();
+                lockedOrigin=null;BOUNDS.clear();
+                msg("Выбрано: "+build().name()+(preview?"":". Призрак скрыт — /sb paste или /sb use"),true);
+            }
         }
-        while(LOCK.consumeClick()){
-            if(build()==null)continue;
-            if(lockedOrigin!=null){lockedOrigin=null;msg("Призрак следует за прицелом",false);}
-            else{BlockPos pos=target();if(pos!=null){lockedOrigin=pos.immutable();preview=true;msg("Положение зафиксировано. Стрелки — сдвиг",false);}else msg("Наведи прицел на блок",false);}
+        if(!preview){
+            int ignored=consume(LOCK)+consume(ROTATE)+consume(FORWARD)+consume(BACK)+consume(LEFT)+consume(RIGHT)+consume(UP)+consume(DOWN)+consume(CONFIRM);
+            if(ignored>0)msg("Призрак выключен. /sb paste — вставить скрипт, /sb use имя — показать сохранённую.",true);
+            return;
         }
-        while(ROTATE.consumeClick())rotate(shift);
+        if(consume(LOCK)>0){
+            if(build()==null)msg("Нет постройки. /sb paste — вставить скрипт",true);
+            else if(lockedOrigin!=null){lockedOrigin=null;msg("Призрак следует за прицелом",false);}
+            else{BlockPos pos=target();if(pos!=null){lockedOrigin=pos.immutable();msg("Положение зафиксировано. Стрелки — сдвиг",false);}else msg("Наведи прицел на блок",false);}
+        }
+        if(consume(ROTATE)>0)rotate(shift);
         Direction forward=p.getDirection();
-        while(FORWARD.consumeClick())move(forward,step);
-        while(BACK.consumeClick())move(forward.getOpposite(),step);
-        while(LEFT.consumeClick())move(forward.getCounterClockWise(),step);
-        while(RIGHT.consumeClick())move(forward.getClockWise(),step);
-        while(UP.consumeClick())move(Direction.UP,step);
-        while(DOWN.consumeClick())move(Direction.DOWN,step);
-        while(CONFIRM.consumeClick()){
-            if(build()==null||!preview||!QUEUE.isEmpty())continue;
-            if(lockedOrigin==null){msg("Сначала зафиксируй постройку клавишей G",true);continue;}
+        int n;
+        if((n=consume(FORWARD))>0)move(forward,step*n);
+        if((n=consume(BACK))>0)move(forward.getOpposite(),step*n);
+        if((n=consume(LEFT))>0)move(forward.getCounterClockWise(),step*n);
+        if((n=consume(RIGHT))>0)move(forward.getClockWise(),step*n);
+        if((n=consume(UP))>0)move(Direction.UP,step*n);
+        if((n=consume(DOWN))>0)move(Direction.DOWN,step*n);
+        if(consume(CONFIRM)>0){
+            if(build()==null)return;
+            if(lockedOrigin==null){msg("Сначала зафиксируй постройку клавишей G",true);return;}
             Bounds b=bounds();
             int bottom=lockedOrigin.getY()+b.minY(),top=lockedOrigin.getY()+b.maxY();
             if(bottom<Minecraft.getInstance().level.getMinBuildHeight()||top>=Minecraft.getInstance().level.getMaxBuildHeight()){
-                msg("Постройка выходит за пределы высоты мира. Измени высоту PgUp/PgDn.",true);continue;
+                msg("Постройка выходит за пределы высоты мира. Измени высоту PgUp/PgDn.",true);return;
             }
-            QUEUE.addAll(build().commands(lockedOrigin,rotation));total=QUEUE.size();preview=false;
+            QUEUE.addAll(build().commands(lockedOrigin,rotation));total=QUEUE.size();hidePreview();
             msg("Отправляю "+total+" команд. Backspace — остановить",true);
         }
     }
     @SubscribeEvent public void tick(TickEvent.ClientTickEvent e){
         if(e.phase!=TickEvent.Phase.END)return;
         Minecraft mc=Minecraft.getInstance();
-        if(previousLevel!=mc.level){QUEUE.clear();lockedOrigin=null;previousLevel=mc.level;}
+        if(previousLevel!=mc.level){QUEUE.clear();hidePreview();previousLevel=mc.level;}
         if(mc.player==null){drain();return;}
         if(mc.screen==null)controls(mc.player);else drain();
         if(!QUEUE.isEmpty()){
@@ -199,11 +209,13 @@ public final class SevenStarsBuilder {
                 for(int i=0;i<BUILDS.size();i++)msg((i==selected?"> ":"")+BUILDS.get(i).name(),true);
                 return 1;
             }))
+            .then(Commands.literal("hide").executes(c->{hidePreview();msg("Призрак скрыт.",true);return 1;}))
             .then(Commands.literal("use").then(Commands.argument("name",StringArgumentType.greedyString()).executes(c->{
                 if(!QUEUE.isEmpty()){msg("Сначала останови очередь",true);return 0;}
                 String q=StringArgumentType.getString(c,"name").toLowerCase(Locale.ROOT);
                 for(int i=0;i<BUILDS.size();i++)if(BUILDS.get(i).name().toLowerCase(Locale.ROOT).contains(q)){
-                    selected=i;resetPlacement();msg("Выбрано: "+build().name(),true);return 1;
+                    selected=i;resetPlacement();preview=true;
+                    msg("Выбрано: "+build().name()+". Призрак включён.",true);return 1;
                 }
                 msg("Постройка не найдена",true);return 0;
             }))));
