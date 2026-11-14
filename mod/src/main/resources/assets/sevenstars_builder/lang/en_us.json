@@ -1,0 +1,14 @@
+{
+  "category.sevenstars_builder": "7Stars Builder",
+  "key.sevenstars_builder.next": "Next build",
+  "key.sevenstars_builder.rotate": "Rotate (Shift — reverse)",
+  "key.sevenstars_builder.confirm": "Build after lock",
+  "key.sevenstars_builder.cancel": "Stop queue / hide ghost",
+  "key.sevenstars_builder.lock": "Lock ghost",
+  "key.sevenstars_builder.forward": "Move forward",
+  "key.sevenstars_builder.back": "Move back",
+  "key.sevenstars_builder.left": "Move left",
+  "key.sevenstars_builder.right": "Move right",
+  "key.sevenstars_builder.up": "Raise ghost",
+  "key.sevenstars_builder.down": "Lower ghost"
+}

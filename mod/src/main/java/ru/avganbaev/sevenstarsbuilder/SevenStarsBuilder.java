@@ -7,6 +7,9 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.world.level.Level;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.KeyMapping;
+import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraftforge.client.settings.IKeyConflictContext;
+import net.minecraftforge.client.settings.KeyConflictContext;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.commands.Commands;
@@ -37,11 +40,17 @@ public final class SevenStarsBuilder {
     public static final String MODID="sevenstars_builder";
     private static final Logger LOG=LogUtils.getLogger();
     private static final String CAT="category.sevenstars_builder";
-    private static KeyMapping key(String name,int code){return new KeyMapping("key.sevenstars_builder."+name,code,CAT);}
-    private static final KeyMapping NEXT=key("next",GLFW.GLFW_KEY_RIGHT_BRACKET);
+    // Призрак-клавиши активны только когда призрак включён и не открыт экран.
+    private static final IKeyConflictContext GHOST=new IKeyConflictContext(){
+        @Override public boolean isActive(){return preview&&Minecraft.getInstance().screen==null;}
+        @Override public boolean conflicts(IKeyConflictContext other){return this==other;}
+    };
+    private static KeyMapping key(String name,int code){return new KeyMapping("key.sevenstars_builder."+name,GHOST,InputConstants.Type.KEYSYM.getOrCreate(code),CAT);}
+    private static KeyMapping keyAlways(String name,int code){return new KeyMapping("key.sevenstars_builder."+name,KeyConflictContext.IN_GAME,InputConstants.Type.KEYSYM.getOrCreate(code),CAT);}
+    private static final KeyMapping NEXT=keyAlways("next",GLFW.GLFW_KEY_RIGHT_BRACKET);
     private static final KeyMapping ROTATE=key("rotate",GLFW.GLFW_KEY_R);
     private static final KeyMapping CONFIRM=key("confirm",GLFW.GLFW_KEY_ENTER);
-    private static final KeyMapping CANCEL=key("cancel",GLFW.GLFW_KEY_BACKSPACE);
+    private static final KeyMapping CANCEL=keyAlways("cancel",GLFW.GLFW_KEY_BACKSPACE);
     private static final KeyMapping LOCK=key("lock",GLFW.GLFW_KEY_G);
     private static final KeyMapping FORWARD=key("forward",GLFW.GLFW_KEY_UP);
     private static final KeyMapping BACK=key("back",GLFW.GLFW_KEY_DOWN);
@@ -153,11 +162,7 @@ public final class SevenStarsBuilder {
                 msg("Выбрано: "+build().name()+(preview?"":". Призрак скрыт — /sb paste или /sb use"),true);
             }
         }
-        if(!preview){
-            int ignored=consume(LOCK)+consume(ROTATE)+consume(FORWARD)+consume(BACK)+consume(LEFT)+consume(RIGHT)+consume(UP)+consume(DOWN)+consume(CONFIRM);
-            if(ignored>0)msg("Призрак выключен. /sb paste — вставить скрипт, /sb use имя — показать сохранённую.",true);
-            return;
-        }
+        if(!preview){drain();return;}
         if(consume(LOCK)>0){
             if(build()==null)msg("Нет постройки. /sb paste — вставить скрипт",true);
             else if(lockedOrigin!=null){lockedOrigin=null;msg("Призрак следует за прицелом",false);}
