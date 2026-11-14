@@ -1,6 +1,10 @@
 package ru.avganbaev.sevenstarsbuilder;
 
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.world.level.Level;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -52,6 +56,7 @@ public final class SevenStarsBuilder {
     private static boolean preview;
     private static BlockPos lockedOrigin;
     private static Object previousLevel;
+    private static BlockPos pos1,pos2;
     private static final Map<String,Bounds> BOUNDS=new HashMap<>();
     private record Bounds(int minX,int minY,int minZ,int maxX,int maxY,int maxZ){}
 
@@ -201,6 +206,46 @@ public final class SevenStarsBuilder {
         BlockPos o=origin();
         if(o!=null)GhostRenderer.render(e.getPoseStack(),e.getCamera().getPosition(),o,build().cells(rotation));
     }
+    private static LiteralArgumentBuilder<CommandSourceStack> pos(String name,int which){
+        return Commands.literal(name)
+            .executes(c->{setPos(which,null);return 1;})
+            .then(Commands.argument("x",IntegerArgumentType.integer())
+                .then(Commands.argument("y",IntegerArgumentType.integer())
+                    .then(Commands.argument("z",IntegerArgumentType.integer())
+                        .executes(c->{
+                            setPos(which,new BlockPos(IntegerArgumentType.getInteger(c,"x"),IntegerArgumentType.getInteger(c,"y"),IntegerArgumentType.getInteger(c,"z")));
+                            return 1;
+                        }))));
+    }
+    private static void setPos(int which,BlockPos p){
+        if(p==null){
+            Minecraft mc=Minecraft.getInstance();
+            if(mc.player==null)return;
+            HitResult hit=mc.player.pick(80.0D,1.0F,false);
+            if(hit.getType()!=HitResult.Type.BLOCK){msg("Наведи прицел на блок",true);return;}
+            p=((BlockHitResult)hit).getBlockPos();
+        }
+        if(which==1)pos1=p.immutable();else pos2=p.immutable();
+        msg("Точка "+which+": "+p.getX()+" "+p.getY()+" "+p.getZ(),true);
+    }
+    private static void exportZone(String name){
+        if(pos1==null||pos2==null){msg("Задай две точки: /sb pos1 и /sb pos2",true);return;}
+        Level level=Minecraft.getInstance().level;
+        if(level==null)return;
+        try{
+            List<String> lines=WorldExporter.export(level,pos1,pos2,name);
+            String text=String.join("\n",lines)+"\n";
+            ScriptParser.parse(text);
+            String file=name.replaceAll("[^\\p{L}\\p{N}_-]+","_")+".txt";
+            Files.createDirectories(dir());
+            Files.writeString(dir().resolve(file),text,StandardCharsets.UTF_8);
+            int ops=lines.size()-2;
+            msg("Сохранено: "+file+" ("+ops+" команд). Пришли мне этот файл из config/sevenstars_builds",true);
+            if(ops>20000)msg("Внимание: больше 20000 команд, мод не сможет загрузить такой скрипт",true);
+        }catch(ScriptParser.ParseException|IOException|IllegalStateException ex){
+            msg("Не удалось сохранить: "+ex.getMessage(),true);
+        }
+    }
     @SubscribeEvent public void commands(RegisterClientCommandsEvent e){
         e.getDispatcher().register(Commands.literal("sb")
             .then(Commands.literal("paste").executes(c->{paste();return 1;}))
@@ -209,6 +254,8 @@ public final class SevenStarsBuilder {
                 for(int i=0;i<BUILDS.size();i++)msg((i==selected?"> ":"")+BUILDS.get(i).name(),true);
                 return 1;
             }))
+            .then(pos("pos1",1)).then(pos("pos2",2))
+            .then(Commands.literal("export").then(Commands.argument("name",StringArgumentType.greedyString()).executes(c->{exportZone(StringArgumentType.getString(c,"name"));return 1;})))
             .then(Commands.literal("hide").executes(c->{hidePreview();msg("Призрак скрыт.",true);return 1;}))
             .then(Commands.literal("use").then(Commands.argument("name",StringArgumentType.greedyString()).executes(c->{
                 if(!QUEUE.isEmpty()){msg("Сначала останови очередь",true);return 0;}
