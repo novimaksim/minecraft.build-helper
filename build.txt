@@ -1,0 +1,6 @@
+cd /Users/novimaksim/Documents/GitHub/7stars.mods/mod
+
+export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home
+export GRADLE_USER_HOME="$HOME/.gradle"
+
+../.tools/gradle-7.6.4/bin/gradle build
