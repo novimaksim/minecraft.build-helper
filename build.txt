@@ -1,4 +1,4 @@
-cd /Users/novimaksim/Documents/GitHub/7stars.mods/mod
+cd /Users/novimaksim/Documents/GitHub/minecraft.build-helper/mod
 
 export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home
 export GRADLE_USER_HOME="$HOME/.gradle"

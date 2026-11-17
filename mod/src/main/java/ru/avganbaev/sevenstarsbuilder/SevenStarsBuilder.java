@@ -242,10 +242,11 @@ public final class SevenStarsBuilder {
             String text=String.join("\n",lines)+"\n";
             ScriptParser.parse(text);
             String file=name.replaceAll("[^\\p{L}\\p{N}_-]+","_")+".txt";
-            Files.createDirectories(dir());
-            Files.writeString(dir().resolve(file),text,StandardCharsets.UTF_8);
+            Path out=Paths.get(System.getProperty("user.home"),"Downloads").resolve(file);
+            Files.createDirectories(out.getParent());
+            Files.writeString(out,text,StandardCharsets.UTF_8);
             int ops=lines.size()-2;
-            msg("Сохранено: "+file+" ("+ops+" команд). Пришли мне этот файл из config/sevenstars_builds",true);
+            msg("Сохранено: "+out+" ("+ops+" команд)",true);
             if(ops>20000)msg("Внимание: больше 20000 команд, мод не сможет загрузить такой скрипт",true);
         }catch(ScriptParser.ParseException|IOException|IllegalStateException ex){
             msg("Не удалось сохранить: "+ex.getMessage(),true);
