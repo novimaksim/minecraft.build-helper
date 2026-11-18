@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+      - '[0-9]+.[0-9]+*'
 
 permissions:
   contents: write
@@ -11,13 +12,12 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: mod
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -31,11 +31,40 @@ jobs:
           gradle-version: '7.6.4'
 
       - name: Build
+        working-directory: mod
         run: gradle build --no-daemon
+
+      - name: Generate release notes
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          TAG_TYPE=$(git cat-file -t "refs/tags/${TAG}" 2>/dev/null || echo "commit")
+          PREV_TAG=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+
+          : > release_notes.md
+
+          if [ "$TAG_TYPE" = "tag" ]; then
+            TAG_MSG=$(git for-each-ref --format='%(contents)' "refs/tags/${TAG}")
+            if [ -n "$TAG_MSG" ]; then
+              printf "%s\n\n" "$TAG_MSG" >> release_notes.md
+            fi
+          fi
+
+          if [ -n "$PREV_TAG" ]; then
+            RANGE="${PREV_TAG}..${TAG}"
+            echo "### Изменения с ${PREV_TAG}" >> release_notes.md
+          else
+            RANGE="${TAG}"
+            echo "### Изменения" >> release_notes.md
+          fi
+
+          git log "$RANGE" --no-merges --pretty=format:"- %s (\`%h\`)" >> release_notes.md
+          echo "" >> release_notes.md
 
       - name: Create GitHub release with jar
         uses: softprops/action-gh-release@v2
         with:
           files: mod/build/libs/*.jar
+          body_path: release_notes.md
           generate_release_notes: true
           fail_on_unmatched_files: true
