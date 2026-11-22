@@ -1,5 +1,5 @@
 plugins { id 'net.minecraftforge.gradle' version '[5.1,5.2)'; id 'eclipse'; id 'maven-publish' }
-version = '1.1'
+version = project.findProperty('project_version') ?: '1.0.0'
 group = 'ru.avganbaev.sevenstarsbuilder'
 base { archivesName = 'sevenstars-builder-1.19.2' }
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
