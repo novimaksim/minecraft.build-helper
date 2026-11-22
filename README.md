@@ -140,4 +140,6 @@ set x y z minecraft:oak_log[axis=y]
 
 ## Лицензия
 
-Не указана.
+Copyright (c) 2026 novimaksim. All Rights Reserved.
+
+Unauthorized copying, modification, redistribution, or use of this software, its source code, compiled binaries, textures, models, or assets, via any medium, is strictly prohibited without explicit written permission from the author.
