@@ -5,6 +5,8 @@ license="All Rights Reserved"
 modId="sevenstars_builder"
 version="${file.jarVersion}"
 displayName="7Stars Builder"
+authors="novimaksim"
+displayURL="https://github.com/novimaksim/minecraft.build-helper"
 description='''Client builder with ghost preview and OP-command placement.'''
 [[dependencies.sevenstars_builder]]
 modId="forge"
